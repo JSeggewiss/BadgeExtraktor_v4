@@ -144,22 +144,30 @@ def extract_badge_data(image_path: str | Path, api_key: str) -> dict:
 
 
 # ──────────────────────────────────────────────────────────────
-# 4. Detaillierte Web-Recherche via Perplexity Sonar (Institution, Position, E-Mail)
+# 4. Detaillierte Web-Recherche via Perplexity Sonar
+#    (Institution, Position, Ort, E-Mail, Website)
 # ──────────────────────────────────────────────────────────────
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 
-DETAILED_SEARCH_PROMPT = """Du bist ein Recherche-Assistent für Konferenz-Badges im Bereich
-Humangenetik und verwandten Fächern (Molekulargenetik, Onkologie, Pathologie).
+DETAILED_SEARCH_PROMPT = """Du bist ein hochspezialisierter Recherche-Assistent für
+Konferenz-Badges im Bereich Humangenetik und verwandten Fächern
+(Medizinische Genetik, Molekulargenetik, Onkologie, Pathologie).
 
 Aufgabe:
-Für die folgende Person sollst du eine berufliche Kontaktzeile recherchieren
-und strukturieren:
+Für die folgende Person sollst du eine berufliche Kontaktzeile
+recherchieren und strukturieren:
 
 Vorname: {vorname}
 Nachname: {nachname}
 Ort (Badge): {ort}
 Institution (Badge, falls vorhanden): {institution}
+
+WICHTIG:
+- Du darfst Informationen NICHT erfinden.
+- Bevor du eine E-Mailadresse akzeptierst, prüfe, ob sie auf einer
+  offiziellen Seite einer Uni, eines Klinikums oder Instituts steht.
+- Wenn du dir nicht sicher bist, setze das Feld auf "nicht gefunden".
 
 Vorgehen (immer in dieser Reihenfolge):
 
@@ -168,44 +176,75 @@ Vorgehen (immer in dieser Reihenfolge):
      - "{vorname} {nachname} {ort} Humangenetik"
      - "{vorname} {nachname} Humangenetik"
      - "{vorname} {nachname} Medizinische Genetik"
-   - Ziel: Eine passende Institution im Bereich Humangenetik,
-     Medizinische Genetik, Molekulargenetik, Onkologie oder Pathologie.
+   - Ignoriere Treffer, die offensichtlich nichts mit Medizin /
+     Biologie / Klinik / Labor zu tun haben.
 
 2. Offizielle Institution identifizieren
-   - Bevorzuge Universitäten, Universitätskliniken, Kliniken, Institute oder Labore.
-   - Vermeide Social-Media-Profile als Primärquelle.
-   - Nutze LinkedIn/ResearchGate nur, um die Institution zu identifizieren,
-     wechsle dann auf die offizielle Uni-/Klinikseite.
+   - Bevorzuge Domains mit TLDs wie:
+       .ac.at, .uni-*.*, .meduni-*, .uni-*, .de, .at
+     und Klinik-/Uni-Klinik-Seiten (z.B. "uniklinikum", "klinikum",
+     "uk-", "meduni", "i-med", "uk-essen", "uk-erlangen").
+   - Vermeide Social-Media-Profile (LinkedIn, X, ResearchGate)
+     als Primärquelle. Nutze sie höchstens, um die Institution zu
+     identifizieren und gehe dann auf die offizielle Seite.
 
 3. Team- oder Kontaktseite öffnen
-   - Öffne explizit eine Team-/Mitarbeiter-/Kontaktseite der gefundenen Institution
-     (z.B. Seite mit "Team", "Mitarbeiter", "Klinik", "Institut").
+   - Öffne explizit eine Team-/Mitarbeiter-/Kontaktseite der gefundenen
+     Institution (z.B. Seite mit "Team", "Mitarbeiter", "Klinik",
+     "Institut", "Department", "Sektion").
    - Suche innerhalb dieser Seite per String-Suche nach:
-     - dem vollständigen Namen "{vorname} {nachname}"
-     - falls nötig auch nur nach dem Nachnamen "{nachname}".
+       - dem vollständigen Namen "{vorname} {nachname}"
+       - falls nötig auch nur nach dem Nachnamen "{nachname}".
 
 4. Daten aus dem Eintrag extrahieren
    Wenn die Person in einer Team-/Kontakt-/Mitarbeiterliste gefunden wird,
    extrahiere:
    - exakte Bezeichnung der Institution
      (inkl. Universität/Klinikum und ggf. Klinik/Institut/Abteilung/Sektion)
-   - Ort der Institution
-   - Positions-/Funktionsbezeichnung
+   - Ort der Institution (z.B. Innsbruck, Essen, Erlangen)
+   - Positions-/Funktionsbezeichnung (z.B. "Fachärztin für Humangenetik")
    - dienstliche E-Mailadresse
    - direkte URL des Eintrags (Personenprofil oder Teamseite)
 
-5. Falls keine offizielle Team-/Kontaktseite mit Eintrag auffindbar ist:
-   - Versuche, aus einer offiziellen Uni-/Klinik-Seite (z.B. PDF, Organigramm,
+5. Falls keine passende Team-/Kontaktseite mit Eintrag auffindbar ist:
+   - Versuche, aus offiziellen Uni-/Klinik-Seiten (z.B. PDF, Organigramm,
      Projektseite) dennoch eine seriöse E-Mailadresse zu finden.
+   - Akzeptiere E-Mailadressen nur, wenn sie klar im Kontext der
+     Institution stehen.
    - Wenn auch das nicht möglich ist:
-     - setze die E-Mailadresse auf "nicht gefunden"
-     - gib die plausibelste Institution + Ort an, die du finden konntest
-       (oder "nicht gefunden", falls auch das unklar ist).
+       - setze die E-Mailadresse auf "nicht gefunden"
+       - gib die plausibelste Institution + Ort an, die du finden konntest
+         (oder "nicht gefunden", falls auch das unklar ist).
+
+BEISPIEL-AUSGABEN:
+
+Beispiel 1 (vollständig gefunden):
+{
+  "nachname": "Weiss",
+  "vorname": "Luisa",
+  "institution": "Universitätsklinikum Erlangen, Humangenetik",
+  "position": "Fachärztin für Humangenetik, Dr. med.",
+  "ort": "Erlangen",
+  "email": "luisa.weiss@uk-erlangen.de",
+  "website": "https://www.humangenetik.uk-erlangen.de/ueber-uns/team/wissenschaftliche-mitarbeiter/"
+}
+
+Beispiel 2 (E-Mail nicht gefunden):
+{
+  "nachname": "Muster",
+  "vorname": "Anna",
+  "institution": "Medizinische Universität Innsbruck, Institut für Humangenetik",
+  "position": "nicht gefunden",
+  "ort": "Innsbruck",
+  "email": "nicht gefunden",
+  "website": "https://www.i-med.ac.at/humgen/team.html.de"
+}
 
 Ausgabeformat:
-Gib das Ergebnis ausschließlich als kompaktes JSON-Objekt zurück:
+Gib das Ergebnis ausschließlich als kompaktes JSON-Objekt zurück, genau
+mit diesen Schlüsseln:
 
-{{
+{
   "nachname": "...",
   "vorname": "...",
   "institution": "...",
@@ -213,7 +252,7 @@ Gib das Ergebnis ausschließlich als kompaktes JSON-Objekt zurück:
   "ort": "...",
   "email": "...",
   "website": "..."
-}}
+}
 
 - Verwende "nicht gefunden" für Felder, die du trotz Recherche nicht
   belegen kannst.
@@ -253,7 +292,7 @@ def find_detailed_contact(
 
     try:
         resp = client.chat.completions.create(
-            model="sonar",  # hat eingebaute Web-Suche
+            model="sonar",  # bei Bedarf auf "sonar-pro" umstellen
             messages=[
                 {
                     "role": "system",
@@ -281,12 +320,19 @@ def find_detailed_contact(
         if email and not EMAIL_RE.fullmatch(email):
             email = "nicht gefunden"
 
+        # leichte Plausibilitätsprüfung Ort
+        city = (data.get("ort") or "").strip()
+        badge_city = (ort or "").strip()
+        if badge_city and city and badge_city.lower() not in city.lower():
+            # wenn abweichend, Badge-Stadt bevorzugen
+            city = badge_city
+
         result = {
             "nachname": (data.get("nachname") or nachname or "").strip(),
             "vorname": (data.get("vorname") or vorname or "").strip(),
             "institution": (data.get("institution") or institution or "nicht gefunden").strip(),
             "position": (data.get("position") or "nicht gefunden").strip(),
-            "ort": (data.get("ort") or ort or "").strip(),
+            "ort": city,
             "email": email if email else "nicht gefunden",
             "website": (data.get("website") or "nicht gefunden").strip(),
         }
